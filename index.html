@@ -72,7 +72,7 @@
     <div class="card">
       <h1>MULTI DASH</h1>
       <p><b>Geometry Dash de multiplicaciones.</b><br><br>
-      Salta los pinchos con <b>ESPACIO</b>, clic o toque. Súbete a las <b>plataformas flotantes</b>, usa los <b>pads amarillos 🟡</b> que te lanzan por los aires y toca los <b>orbes ✨</b> en pleno vuelo para dar un salto extra. Recoge <b>monedas 🪙</b> y ¡pilas con los <b>meteoritos ☄️</b> que caen rapidísimo! Cuando veas el ⚠ parpadeando, no pases por ahí.<br><br>
+      Salta los pinchos con <b>ESPACIO</b>, clic o toque. ¡Tienes <b>doble salto</b>!: toca dos veces para saltar en el aire. Súbete a las <b>plataformas flotantes</b>, usa los <b>pads amarillos 🟡</b> que te lanzan por los aires y toca los <b>orbes ✨</b> para un salto extra que recarga tu doble salto. Recoge <b>monedas 🪙</b> y ¡pilas con los <b>meteoritos ☄️</b> que caen rapidísimo! Cuando veas el ⚠ parpadeando, no pases por ahí.<br><br>
       En el camino hay <b>portales de multiplicación</b>: tienes <b>2 intentos</b> para responder bien; si fallas los dos (o se acaba el tiempo) ¡explotas! 💥<br><br>
       🟦 Nivel 1: tablas de 1 cifra<br>
       🟪 Nivel 2: multiplicaciones de 2 cifras<br>
@@ -100,6 +100,7 @@
       <h2 style="text-shadow:0 0 14px var(--bad)">💥 ¡BOOM!</h2>
       <p id="deathMsg">Chocaste con un pincho.</p>
       <button class="btn pink" id="retryBtn">REINTENTAR NIVEL</button>
+      <p class="hint">o presiona ESPACIO para reintentar</p>
     </div>
   </div>
 
@@ -251,6 +252,8 @@ addEventListener('resize',resize); resize();
 // ================= JUGADOR =================
 const player = { x:110, y:0, size:40, vy:0, rot:0, onGround:true };
 const GRAV = 0.85, JUMP = -14.5;
+let jumpBufferedAt=-1, lastGroundedAt=0; // salto en buffer + coyote time
+let airJumpsLeft=1; // doble salto: un salto extra en el aire
 
 // ================= MUNDO =================
 let camX=0, obstacles=[], gates=[], particles=[], deadFx=[], meteors=[], orbs=[], coins=[];
@@ -258,6 +261,7 @@ function buildLevel(){
   camX=0; obstacles=[]; gates=[]; particles=[]; deadFx=[]; meteors=[]; orbs=[]; coins=[];
   coinsRun=0;
   player.y=groundY-player.size; player.vy=0; player.rot=0; player.onGround=true;
+  airJumpsLeft=1; jumpBufferedAt=-1;
   dead=false; paused=false;
   // pinchos, bloques y plataformas flotantes
   let x=700;
@@ -321,19 +325,40 @@ function updateHud(){
 // ================= INPUT =================
 function jump(){
   if(!running || paused || dead) return;
-  if(player.onGround){ player.vy=JUMP; player.onGround=false; SFX.jump(); return; }
-  // orbe: tocar en el aire cerca de un orbe da un salto extra
+  const now=performance.now();
+  // suelo, o coyote time: hasta 100ms después de salir de un borde aún cuenta
+  if(player.onGround || (player.vy>=0 && now-lastGroundedAt<100)){
+    player.vy=JUMP; player.onGround=false; jumpBufferedAt=-1; airJumpsLeft=1; SFX.jump(); return;
+  }
+  // orbe: tocar en el aire cerca de un orbe da un salto extra (y recarga el doble salto)
   const pcx=player.x+player.size/2, pcy=player.y+player.size/2;
   for(const o of orbs){
     const ox=o.x-camX;
     if(!o.used && Math.abs(ox-pcx)<52 && Math.abs(o.y-pcy)<58){
-      o.used=true; player.vy=JUMP; SFX.orb();
+      o.used=true; player.vy=JUMP; airJumpsLeft=1; SFX.orb();
       for(let i=0;i<10;i++) particles.push({x:ox+rnd(-10,10), y:o.y+rnd(-10,10), life:1});
       return;
     }
   }
+  // doble salto libre: un salto extra en el aire con doble tap/espacio
+  if(airJumpsLeft>0){
+    airJumpsLeft--; player.vy=JUMP*0.92; SFX.orb();
+    for(let i=0;i<6;i++) particles.push({x:pcx+rnd(-10,10), y:player.y+player.size+rnd(-4,4), life:1});
+    return;
+  }
+  // buffer: si presionaste justo antes de aterrizar, el salto se ejecuta al tocar suelo
+  jumpBufferedAt=now;
 }
-addEventListener('keydown',e=>{ if(e.code==='Space'){ e.preventDefault(); jump(); }});
+addEventListener('keydown',e=>{
+  if(e.code!=='Space') return;
+  e.preventDefault();
+  if(e.repeat) return;
+  // ESPACIO también acciona la pantalla visible: reintentar, jugar o reiniciar
+  if(!document.getElementById('deathScreen').classList.contains('hidden')){ document.getElementById('retryBtn').click(); return; }
+  if(!document.getElementById('startScreen').classList.contains('hidden')){ document.getElementById('startBtn').click(); return; }
+  if(!document.getElementById('winScreen').classList.contains('hidden')){ document.getElementById('restartBtn').click(); return; }
+  jump();
+});
 cv.addEventListener('pointerdown',jump);
 
 // ================= LOOP =================
@@ -356,6 +381,12 @@ function update(dt){
   if(player.y >= floorY-player.size){ player.y=floorY-player.size; player.vy=0;
     if(!player.onGround){ player.onGround=true; player.rot=Math.round(player.rot/90)*90; SFX.land(); } }
   else { player.onGround=false; player.rot += 6.5*dt; }
+  if(player.onGround){
+    lastGroundedAt=performance.now(); airJumpsLeft=1;
+    if(jumpBufferedAt>0 && performance.now()-jumpBufferedAt<150){
+      jumpBufferedAt=-1; player.vy=JUMP; player.onGround=false; SFX.jump();
+    } else if(jumpBufferedAt>0){ jumpBufferedAt=-1; }
+  }
   // estela
   if(Math.random()<0.5) particles.push({x:player.x-6,y:player.y+player.size-6+rnd(-4,4),life:1});
   particles.forEach(p=>{p.x-=spd; p.life-=0.04*dt});
