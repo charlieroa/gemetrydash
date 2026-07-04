@@ -650,12 +650,24 @@ function resetPaperUI(){
 }
 function handlePhoto(e){
   const f=e.target.files[0]; if(!f) return;
-  photoType = f.type || 'image/jpeg';
   const r=new FileReader();
-  r.onload=()=>{ photoB64=r.result.split(',')[1];
-    const img=document.getElementById('photoPreview'); img.src=r.result; img.classList.remove('hidden');
-    document.getElementById('verifyBtn').classList.remove('hidden');
-    document.getElementById('verdict').classList.add('hidden');
+  r.onload=()=>{
+    // reescalar a máx 1280px y comprimir a JPEG para no pasar el límite del servidor
+    const img=new Image();
+    img.onload=()=>{
+      const MAX=1280;
+      const sc=Math.min(1, MAX/Math.max(img.width,img.height));
+      const c=document.createElement('canvas');
+      c.width=Math.round(img.width*sc); c.height=Math.round(img.height*sc);
+      c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+      const dataUrl=c.toDataURL('image/jpeg',0.85);
+      photoType='image/jpeg';
+      photoB64=dataUrl.split(',')[1];
+      const prev=document.getElementById('photoPreview'); prev.src=dataUrl; prev.classList.remove('hidden');
+      document.getElementById('verifyBtn').classList.remove('hidden');
+      document.getElementById('verdict').classList.add('hidden');
+    };
+    img.src=r.result;
   };
   r.readAsDataURL(f);
 }
@@ -670,19 +682,13 @@ async function verifyPhoto(){
   const opsDesc = paperOps.map((o,i)=>`${String.fromCharCode(65+i)}) ${o.a} × ${o.b} = ${o.ans}`).join('\n');
   const prompt = `Eres el juez de un juego educativo de multiplicaciones. El estudiante debía resolver A MANO en papel estas operaciones (aquí con la respuesta correcta):\n${opsDesc}\n\nRevisa la foto adjunta de su hoja. Verifica que: (1) las operaciones aparezcan escritas a mano, (2) los resultados escritos coincidan con las respuestas correctas.\nSé un poco flexible con la caligrafía, pero estricto con los números del resultado.\nResponde SOLO con JSON válido, sin backticks ni texto extra, con esta forma exacta:\n{"aprobado": true|false, "correctas": <número de operaciones bien resueltas de 4>, "comentario": "<máx 2 frases en español, tono motivador, di cuáles fallaron si aplica>"}`;
   try{
-    const res = await fetch('https://api.anthropic.com/v1/messages',{
+    const res = await fetch('/api/verify',{
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({
-        model:'claude-sonnet-4-6', max_tokens:1000,
-        messages:[{role:'user',content:[
-          {type:'image', source:{type:'base64', media_type:photoType, data:photoB64}},
-          {type:'text', text:prompt}
-        ]}]
-      })
+      body: JSON.stringify({ image:photoB64, mediaType:photoType, prompt })
     });
     const data = await res.json();
-    const txt = (data.content||[]).filter(c=>c.type==='text').map(c=>c.text).join('\n');
-    const clean = txt.replace(/```json|```/g,'').trim();
+    if(!res.ok) throw new Error(data.error||'Error del servidor');
+    const clean = (data.result||'').replace(/```json|```/g,'').trim();
     const j = JSON.parse(clean);
     const v = document.getElementById('verdict');
     v.classList.remove('hidden','ok','bad');
