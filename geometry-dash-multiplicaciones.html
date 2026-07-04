@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Multi Dash — Geometry Dash de Multiplicaciones</title>
+<link href="https://fonts.googleapis.com/css2?family=Bungee&family=Orbitron:wght@500;700;900&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --neon:#00e5ff; --neon2:#ff2d95; --ok:#3dff8f; --bad:#ff4d4d;
+    --panel:#10142e; --panel2:#1a1f45;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%;overflow:hidden;background:#070a1c;font-family:'Orbitron',sans-serif;color:#fff}
+  #wrap{position:relative;width:100%;height:100%}
+  canvas{display:block;width:100%;height:100%}
+
+  .hud{position:absolute;top:0;left:0;right:0;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;pointer-events:none;z-index:5}
+  .hud .lvl{font-family:'Bungee',cursive;font-size:clamp(14px,3vw,22px);text-shadow:0 0 12px var(--neon)}
+  .hud .att{font-size:clamp(11px,2.4vw,15px);opacity:.85}
+  .progressWrap{position:absolute;top:6px;left:50%;transform:translateX(-50%);width:min(46%,340px);height:10px;background:rgba(255,255,255,.15);border-radius:6px;overflow:hidden;z-index:5}
+  .progressBar{height:100%;width:0%;background:linear-gradient(90deg,var(--neon),var(--neon2));transition:width .15s linear}
+
+  .overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(4,6,20,.82);backdrop-filter:blur(6px);z-index:10;padding:16px}
+  .card{background:linear-gradient(160deg,var(--panel),var(--panel2));border:2px solid rgba(0,229,255,.4);border-radius:18px;padding:26px 24px;max-width:520px;width:100%;text-align:center;box-shadow:0 0 40px rgba(0,229,255,.25);max-height:92vh;overflow-y:auto}
+  h1{font-family:'Bungee',cursive;font-size:clamp(26px,6vw,44px);line-height:1.05;background:linear-gradient(90deg,var(--neon),var(--neon2));-webkit-background-clip:text;background-clip:text;color:transparent;margin-bottom:8px}
+  h2{font-family:'Bungee',cursive;font-size:clamp(18px,4.5vw,28px);margin-bottom:10px;text-shadow:0 0 14px var(--neon)}
+  p{font-size:clamp(12px,2.8vw,15px);line-height:1.55;opacity:.9}
+  .btn{font-family:'Bungee',cursive;font-size:clamp(14px,3.4vw,19px);border:none;border-radius:12px;padding:13px 26px;margin-top:16px;cursor:pointer;color:#04122a;background:linear-gradient(90deg,var(--neon),#4dffd2);box-shadow:0 0 18px rgba(0,229,255,.5);transition:transform .12s}
+  .btn:active{transform:scale(.94)}
+  .btn.pink{background:linear-gradient(90deg,var(--neon2),#ff8ac2);box-shadow:0 0 18px rgba(255,45,149,.5)}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+
+  .bigQ{font-family:'Bungee',cursive;font-size:clamp(30px,8vw,54px);margin:14px 0;text-shadow:0 0 20px var(--neon2)}
+  #answerInput{font-family:'Orbitron',sans-serif;font-size:clamp(22px,6vw,32px);font-weight:700;text-align:center;width:min(240px,80%);padding:10px;border-radius:12px;border:2px solid var(--neon);background:#050a24;color:#fff;outline:none}
+  #answerInput:focus{box-shadow:0 0 16px rgba(0,229,255,.6)}
+  .timerBar{height:8px;background:rgba(255,255,255,.15);border-radius:5px;overflow:hidden;margin:14px auto 0;width:80%}
+  .timerFill{height:100%;width:100%;background:linear-gradient(90deg,var(--ok),#c8ff4d)}
+
+  .opsList{list-style:none;margin:14px 0;display:grid;gap:8px}
+  .opsList li{font-size:clamp(16px,4.2vw,22px);font-weight:700;background:rgba(0,229,255,.08);border:1px solid rgba(0,229,255,.3);border-radius:10px;padding:10px;letter-spacing:1px}
+  .hint{font-size:clamp(11px,2.4vw,13px);opacity:.7;margin-top:8px}
+  input[type=file]{display:none}
+  .preview{max-width:100%;max-height:190px;border-radius:12px;margin-top:12px;border:2px solid rgba(255,255,255,.25)}
+  .spinner{width:44px;height:44px;border:5px solid rgba(0,229,255,.2);border-top-color:var(--neon);border-radius:50%;margin:16px auto 0;animation:spin .8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .verdict{margin-top:14px;padding:12px;border-radius:10px;font-size:clamp(12px,3vw,15px);line-height:1.5}
+  .verdict.ok{background:rgba(61,255,143,.12);border:1px solid var(--ok)}
+  .verdict.bad{background:rgba(255,77,77,.12);border:1px solid var(--bad)}
+  .hidden{display:none!important}
+  @media (prefers-reduced-motion: reduce){ .spinner{animation-duration:1.6s} }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="game"></canvas>
+
+  <div class="hud">
+    <div class="lvl" id="hudLevel">NIVEL 1</div>
+    <div class="att" id="hudAttempts">Intento 1</div>
+  </div>
+  <div class="progressWrap"><div class="progressBar" id="progressBar"></div></div>
+
+  <!-- Pantalla inicio -->
+  <div class="overlay" id="startScreen">
+    <div class="card">
+      <h1>MULTI DASH</h1>
+      <p><b>Geometry Dash de multiplicaciones.</b><br><br>
+      Salta los pinchos con <b>ESPACIO</b>, clic o toque. Súbete a las <b>plataformas flotantes</b> para esquivar pinchos y ¡pilas con los <b>meteoritos ☄️</b> que caen del cielo! Cuando veas el ⚠ parpadeando, no pases por ahí.<br><br>
+      En el camino hay <b>portales de multiplicación</b>: tienes <b>2 intentos</b> para responder bien; si fallas los dos (o se acaba el tiempo) ¡explotas! 💥<br><br>
+      🟦 Nivel 1: tablas de 1 cifra<br>
+      🟪 Nivel 2: multiplicaciones de 2 cifras<br>
+      🟥 Nivel 3: multiplicaciones de 3 cifras<br><br>
+      Al terminar cada nivel viene la <b>misión de papel</b>: resuelves multiplicaciones a mano, subes la foto y una IA revisa tus resultados. Si todo está bien... ¡desbloqueas el siguiente nivel!</p>
+      <button class="btn" id="startBtn">▶ JUGAR</button>
+    </div>
+  </div>
+
+  <!-- Portal de pregunta -->
+  <div class="overlay hidden" id="questionScreen">
+    <div class="card">
+      <h2>⚡ PORTAL DE MULTIPLICACIÓN ⚡</h2>
+      <div class="bigQ" id="questionText">7 × 8</div>
+      <p id="triesMsg" style="font-weight:700;margin-bottom:10px">Tienes 2 intentos</p>
+      <input id="answerInput" type="number" inputmode="numeric" placeholder="?" autocomplete="off">
+      <div class="timerBar"><div class="timerFill" id="timerFill"></div></div>
+      <button class="btn" id="answerBtn">RESPONDER</button>
+    </div>
+  </div>
+
+  <!-- Muerte -->
+  <div class="overlay hidden" id="deathScreen">
+    <div class="card">
+      <h2 style="text-shadow:0 0 14px var(--bad)">💥 ¡BOOM!</h2>
+      <p id="deathMsg">Chocaste con un pincho.</p>
+      <button class="btn pink" id="retryBtn">REINTENTAR NIVEL</button>
+    </div>
+  </div>
+
+  <!-- Misión de papel -->
+  <div class="overlay hidden" id="paperScreen">
+    <div class="card">
+      <h2>📝 MISIÓN DE PAPEL</h2>
+      <p>¡Completaste la pista! Para desbloquear el siguiente nivel, resuelve estas multiplicaciones <b>a mano en una hoja</b> (escribe la operación y el resultado) y sube la foto:</p>
+      <ul class="opsList" id="paperOps"></ul>
+      <p class="hint">Tip: buena luz, letra clara y que se vean las 4 operaciones completas.</p>
+      <div id="photoBtns" style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+        <label class="btn" for="cameraInput">📷 TOMAR FOTO</label>
+        <label class="btn pink" for="photoInput">🖼️ GALERÍA</label>
+      </div>
+      <input type="file" id="cameraInput" accept="image/*" capture="environment">
+      <input type="file" id="photoInput" accept="image/*">
+      <img class="preview hidden" id="photoPreview" alt="Vista previa de tu hoja">
+      <div class="spinner hidden" id="spinner"></div>
+      <div class="verdict hidden" id="verdict"></div>
+      <button class="btn hidden" id="verifyBtn">✅ VERIFICAR CON IA</button>
+      <button class="btn hidden" id="nextLevelBtn">🚀 SIGUIENTE NIVEL</button>
+    </div>
+  </div>
+
+  <!-- Final -->
+  <div class="overlay hidden" id="winScreen">
+    <div class="card">
+      <h1>🏆 ¡CORONASTE!</h1>
+      <p>Superaste los 3 niveles y todas las misiones de papel. Eres oficialmente una máquina de multiplicar. 🔥</p>
+      <p class="hint" id="finalStats"></p>
+      <button class="btn" id="restartBtn">JUGAR DE NUEVO</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ================= CONFIG DE NIVELES =================
+const LEVELS = [
+  { name:'NIVEL 1', speed:5.2,  bg:['#0b1030','#16225e'], accent:'#00e5ff', cube:'#00e5ff',
+    genQ:()=>q(rnd(2,9), rnd(2,9)),
+    genPaper:()=>[q(rnd(3,9),rnd(3,9)),q(rnd(4,9),rnd(4,9)),q(rnd(6,9),rnd(6,9)),q(rnd(7,9),rnd(3,9))],
+    timer:25 },
+  { name:'NIVEL 2', speed:6.2,  bg:['#1a0b30','#3a1670'], accent:'#c04dff', cube:'#3dff8f',
+    genQ:()=>q(rnd(11,99), rnd(2,9)),
+    genPaper:()=>[q(rnd(12,99),rnd(11,99)),q(rnd(15,99),rnd(3,9)),q(rnd(21,99),rnd(11,49)),q(rnd(31,99),rnd(2,9))],
+    timer:45 },
+  { name:'NIVEL 3', speed:7.2,  bg:['#300b0b','#6e1a1a'], accent:'#ff9b2d', cube:'#ffd24d',
+    genQ:()=>q(rnd(101,999), rnd(2,9)),
+    genPaper:()=>[q(rnd(111,999),rnd(11,99)),q(rnd(120,999),rnd(2,9)),q(rnd(200,999),rnd(11,99)),q(rnd(150,999),rnd(3,9))],
+    timer:75 },
+];
+const GATES_PER_LEVEL = 3;
+const LEVEL_LENGTH = 6200; // px de mundo
+
+function rnd(a,b){return Math.floor(Math.random()*(b-a+1))+a}
+function q(a,b){return {a,b,ans:a*b}}
+
+// ================= ESTADO =================
+let level = 0, attempts = 1, totalAttempts = 0;
+let running=false, dead=false, paused=false;
+let paperOps = [];
+
+// ================= CANVAS =================
+const cv = document.getElementById('game'), ctx = cv.getContext('2d');
+let W,H,groundY;
+function resize(){ W=cv.width=innerWidth*devicePixelRatio; H=cv.height=innerHeight*devicePixelRatio;
+  cv.style.width=innerWidth+'px'; cv.style.height=innerHeight+'px';
+  ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
+  groundY = innerHeight*0.78; }
+addEventListener('resize',resize); resize();
+
+// ================= JUGADOR =================
+const player = { x:110, y:0, size:40, vy:0, rot:0, onGround:true };
+const GRAV = 0.85, JUMP = -14.5;
+
+// ================= MUNDO =================
+let camX=0, obstacles=[], gates=[], particles=[], deadFx=[], meteors=[];
+function buildLevel(){
+  camX=0; obstacles=[]; gates=[]; particles=[]; deadFx=[]; meteors=[];
+  player.y=groundY-player.size; player.vy=0; player.rot=0; player.onGround=true;
+  dead=false; paused=false;
+  // pinchos, bloques y plataformas flotantes
+  let x=700;
+  while(x < LEVEL_LENGTH-500){
+    const type = Math.random();
+    if(type<0.42){ // grupo de pinchos (1-2)
+      const n = Math.random()<0.6?1:2;
+      for(let i=0;i<n;i++) obstacles.push({kind:'spike', x:x+i*34, w:34, h:34});
+      x += 120+n*34;
+    } else if(type<0.62){ // bloque para saltar encima
+      obstacles.push({kind:'block', x:x, w:60, h:52});
+      x += 200;
+    } else if(type<0.82){ // plataforma flotante sobre pinchos: toca subirse
+      const fy = groundY-115;
+      obstacles.push({kind:'spike', x:x+55, w:34, h:34});
+      obstacles.push({kind:'spike', x:x+89, w:34, h:34});
+      obstacles.push({kind:'float', x:x, w:130, h:16, y:fy});
+      if(Math.random()<0.5) obstacles.push({kind:'float', x:x+210, w:110, h:16, y:fy-40});
+      x += 400;
+    } else { // pincho sobre bloque bajo -> salto largo
+      obstacles.push({kind:'block', x:x, w:50, h:34});
+      obstacles.push({kind:'spike', x:x+120, w:34, h:34});
+      x += 280;
+    }
+    x += rnd(120,260) * (LEVELS[level].speed/5.2);
+  }
+  // meteoritos que caen del cielo (más en niveles altos)
+  const nMet = 4 + level*3;
+  for(let i=0;i<nMet;i++){
+    const mx = rnd(900, LEVEL_LENGTH-600);
+    meteors.push({x:mx, y:-60, vy:0, r:16, state:'idle', warn:0});
+  }
+  // portales de pregunta repartidos
+  for(let i=1;i<=GATES_PER_LEVEL;i++){
+    const gx = (LEVEL_LENGTH/(GATES_PER_LEVEL+1))*i;
+    // limpiar obstáculos y meteoritos cerca del portal
+    obstacles = obstacles.filter(o=>Math.abs(o.x-gx)>200);
+    meteors = meteors.filter(m=>Math.abs(m.x-gx)>320);
+    gates.push({x:gx, used:false});
+  }
+  updateHud();
+}
+function updateHud(){
+  document.getElementById('hudLevel').textContent = LEVELS[level].name;
+  document.getElementById('hudAttempts').textContent = 'Intento '+attempts;
+  document.documentElement.style.setProperty('--neon', LEVELS[level].accent);
+}
+
+// ================= INPUT =================
+function jump(){ if(running && !paused && !dead && player.onGround){ player.vy=JUMP; player.onGround=false; } }
+addEventListener('keydown',e=>{ if(e.code==='Space'){ e.preventDefault(); jump(); }});
+cv.addEventListener('pointerdown',jump);
+
+// ================= LOOP =================
+let last=0;
+function loop(t){
+  requestAnimationFrame(loop);
+  if(!running) return;
+  const dt = Math.min((t-last)/16.7,2); last=t;
+  if(!paused && !dead) update(dt);
+  draw(t);
+}
+requestAnimationFrame(loop);
+
+function update(dt){
+  const spd = LEVELS[level].speed*dt;
+  camX += spd;
+  // física
+  player.vy += GRAV*dt; player.y += player.vy*dt;
+  const floorY = getFloorY();
+  if(player.y >= floorY-player.size){ player.y=floorY-player.size; player.vy=0;
+    if(!player.onGround){ player.onGround=true; player.rot=Math.round(player.rot/90)*90; } }
+  else { player.onGround=false; player.rot += 6.5*dt; }
+  // estela
+  if(Math.random()<0.5) particles.push({x:player.x-6,y:player.y+player.size-6+rnd(-4,4),life:1});
+  particles.forEach(p=>{p.x-=spd; p.life-=0.04*dt});
+  particles = particles.filter(p=>p.life>0);
+  // colisiones
+  const px=player.x, py=player.y, ps=player.size;
+  for(const o of obstacles){
+    const ox=o.x-camX;
+    if(ox> px+ps || ox+o.w < px) continue;
+    if(o.kind==='spike'){
+      const sy=groundY-o.h;
+      if(py+ps > sy+10 && ox < px+ps-8 && ox+o.w > px+8) return die('Un pincho te agarró. ¡Concéntrate!');
+    } else if(o.kind==='block'){ // block: se puede pisar, chocar de frente mata
+      const by=groundY-o.h;
+      if(py+ps > by+12 && py < groundY && ox < px+ps-4 && ox+o.w > px+4){
+        if(player.vy>=0 && py+ps-player.vy*dt <= by+14){ /* aterrizó */ }
+        else return die('Chocaste de frente con un bloque.');
+      }
+    }
+    // 'float': atravesable desde abajo, solo se pisa (ver getFloorY)
+  }
+  // meteoritos ☄️
+  for(const m of meteors){
+    const mx = m.x - camX;
+    if(m.state==='idle' && mx < innerWidth*0.85 && mx > 0){ m.state='warn'; m.warn=46; }
+    if(m.state==='warn'){ m.warn-=dt; if(m.warn<=0) m.state='fall'; }
+    if(m.state==='fall'){
+      m.vy += 0.55*dt; m.y += m.vy*dt;
+      // colisión círculo-cubo
+      const cx=Math.max(px,Math.min(mx,px+ps)), cy=Math.max(py,Math.min(m.y,py+ps));
+      if((mx-cx)**2 + (m.y-cy)**2 < m.r*m.r) return die('☄️ ¡Un meteorito te aplastó!');
+      if(m.y >= groundY-6){ m.state='done';
+        for(let i=0;i<10;i++) particles.push({x:mx+rnd(-14,14), y:groundY-8, life:1});
+      }
+    }
+  }
+  // portales
+  for(const g of gates){
+    if(!g.used && g.x-camX <= px+ps){ g.used=true; openQuestion(); return; }
+  }
+  // progreso
+  const prog = Math.min(camX/LEVEL_LENGTH,1);
+  document.getElementById('progressBar').style.width=(prog*100)+'%';
+  if(prog>=1) levelComplete();
+}
+function getFloorY(){
+  const px=player.x, ps=player.size;
+  let f = groundY;
+  for(const o of obstacles){
+    const ox=o.x-camX;
+    if(ox >= px+ps-6 || ox+o.w <= px+6) continue;
+    if(o.kind==='block'){
+      const by=groundY-o.h;
+      if(player.y+ps <= by+16) f=Math.min(f,by);
+    } else if(o.kind==='float'){
+      if(player.y+ps <= o.y+16) f=Math.min(f,o.y);
+    }
+  }
+  return f;
+}
+
+// ================= RENDER =================
+function draw(t){
+  const L=LEVELS[level];
+  const g=ctx.createLinearGradient(0,0,0,innerHeight);
+  g.addColorStop(0,L.bg[0]); g.addColorStop(1,L.bg[1]);
+  ctx.fillStyle=g; ctx.fillRect(0,0,innerWidth,innerHeight);
+  // rejilla de fondo
+  ctx.strokeStyle='rgba(255,255,255,0.05)'; ctx.lineWidth=1;
+  const gs=70, off=-(camX*0.4)%gs;
+  for(let x=off;x<innerWidth;x+=gs){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,innerHeight);ctx.stroke();}
+  // suelo
+  ctx.fillStyle='rgba(0,0,0,0.45)'; ctx.fillRect(0,groundY,innerWidth,innerHeight-groundY);
+  ctx.strokeStyle=L.accent; ctx.lineWidth=3; ctx.shadowColor=L.accent; ctx.shadowBlur=14;
+  ctx.beginPath(); ctx.moveTo(0,groundY); ctx.lineTo(innerWidth,groundY); ctx.stroke(); ctx.shadowBlur=0;
+  const goff=-(camX)%56;
+  ctx.strokeStyle='rgba(255,255,255,0.08)';
+  for(let x=goff;x<innerWidth;x+=56){ctx.beginPath();ctx.moveTo(x,groundY);ctx.lineTo(x-24,innerHeight);ctx.stroke();}
+  // obstáculos
+  for(const o of obstacles){
+    const ox=o.x-camX; if(ox<-80||ox>innerWidth+80) continue;
+    if(o.kind==='spike'){
+      ctx.fillStyle='#fff'; ctx.strokeStyle=L.accent; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.moveTo(ox,groundY); ctx.lineTo(ox+o.w/2,groundY-o.h); ctx.lineTo(ox+o.w,groundY); ctx.closePath();
+      ctx.fillStyle='rgba(255,255,255,0.9)'; ctx.fill(); ctx.stroke();
+    } else if(o.kind==='float'){
+      const bob = Math.sin(t/450 + o.x)*3; // flota suavecito
+      ctx.shadowColor=L.accent; ctx.shadowBlur=12;
+      ctx.fillStyle='rgba(255,255,255,0.18)'; ctx.strokeStyle=L.accent; ctx.lineWidth=2;
+      ctx.fillRect(ox, o.y+bob, o.w, o.h); ctx.strokeRect(ox, o.y+bob, o.w, o.h);
+      ctx.shadowBlur=0;
+      ctx.fillStyle='rgba(255,255,255,0.35)'; ctx.fillRect(ox, o.y+bob, o.w, 3);
+    } else {
+      ctx.fillStyle='rgba(255,255,255,0.12)'; ctx.strokeStyle=L.accent; ctx.lineWidth=2;
+      ctx.fillRect(ox,groundY-o.h,o.w,o.h); ctx.strokeRect(ox,groundY-o.h,o.w,o.h);
+    }
+  }
+  // portales
+  for(const gt of gates){
+    const gx=gt.x-camX; if(gx<-100||gx>innerWidth+100) continue;
+    const pulse = 1+Math.sin(t/200)*0.06;
+    ctx.save(); ctx.translate(gx,groundY-70); ctx.scale(pulse,pulse);
+    ctx.strokeStyle= gt.used?'rgba(255,255,255,0.25)':'#ff2d95';
+    ctx.shadowColor='#ff2d95'; ctx.shadowBlur=gt.used?0:20; ctx.lineWidth=6;
+    ctx.beginPath(); ctx.ellipse(0,0,26,64,0,0,Math.PI*2); ctx.stroke(); ctx.shadowBlur=0;
+    ctx.fillStyle='#fff'; ctx.font='bold 26px Orbitron'; ctx.textAlign='center'; ctx.fillText('×',0,9);
+    ctx.restore();
+  }
+  // meteoritos ☄️
+  for(const m of meteors){
+    const mx=m.x-camX; if(mx<-60||mx>innerWidth+60||m.state==='done'||m.state==='idle') continue;
+    if(m.state==='warn'){
+      if(Math.floor(t/150)%2===0){
+        ctx.fillStyle='#ffcf3d'; ctx.font='bold 30px Orbitron'; ctx.textAlign='center';
+        ctx.fillText('⚠', mx, 46);
+      }
+    } else {
+      const grad=ctx.createLinearGradient(mx,m.y-70,mx,m.y);
+      grad.addColorStop(0,'rgba(255,120,0,0)'); grad.addColorStop(1,'rgba(255,160,30,0.7)');
+      ctx.fillStyle=grad;
+      ctx.beginPath(); ctx.moveTo(mx-8,m.y-70); ctx.lineTo(mx+8,m.y-70); ctx.lineTo(mx,m.y); ctx.closePath(); ctx.fill();
+      ctx.shadowColor='#ff7b00'; ctx.shadowBlur=20;
+      ctx.fillStyle='#ff9b2d'; ctx.beginPath(); ctx.arc(mx,m.y,m.r,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle='#ffe08a'; ctx.beginPath(); ctx.arc(mx-4,m.y-4,m.r*0.45,0,Math.PI*2); ctx.fill();
+      ctx.shadowBlur=0;
+    }
+  }
+  // estela
+  for(const p of particles){ ctx.fillStyle=`rgba(0,229,255,${p.life*0.5})`; ctx.fillRect(p.x,p.y,7,7); }
+  // jugador
+  if(!dead){
+    ctx.save(); ctx.translate(player.x+player.size/2, player.y+player.size/2); ctx.rotate(player.rot*Math.PI/180);
+    ctx.shadowColor=L.cube; ctx.shadowBlur=18;
+    ctx.fillStyle=L.cube; ctx.fillRect(-20,-20,40,40); ctx.shadowBlur=0;
+    ctx.strokeStyle='rgba(0,0,0,0.5)'; ctx.lineWidth=3; ctx.strokeRect(-20,-20,40,40);
+    ctx.fillStyle='#04122a'; ctx.fillRect(-11,-9,9,9); ctx.fillRect(3,-9,9,9); ctx.fillRect(-8,6,17,5);
+    ctx.restore();
+  } else {
+    deadFx.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.vy+=0.4;p.life-=0.02;
+      ctx.fillStyle=`rgba(255,220,80,${Math.max(p.life,0)})`; ctx.fillRect(p.x,p.y,6,6);});
+  }
+}
+
+// ================= MUERTE / COMPLETADO =================
+function die(msg){
+  dead=true; attempts++; totalAttempts++;
+  for(let i=0;i<26;i++) deadFx.push({x:player.x+20,y:player.y+20,vx:rnd(-7,7),vy:rnd(-10,2),life:1});
+  setTimeout(()=>{ document.getElementById('deathMsg').textContent=msg; show('deathScreen'); },550);
+}
+document.getElementById('retryBtn').onclick=()=>{ hide('deathScreen'); buildLevel(); };
+
+function levelComplete(){
+  paused=true;
+  paperOps = LEVELS[level].genPaper();
+  const list=document.getElementById('paperOps');
+  list.innerHTML = paperOps.map((o,i)=>`<li>${String.fromCharCode(65+i)}) &nbsp;${o.a} × ${o.b} = ______</li>`).join('');
+  resetPaperUI();
+  show('paperScreen');
+}
+
+// ================= PREGUNTAS EN PORTAL =================
+let currentQ=null, timerId=null, timerStart=0, timerDur=0, triesLeft=2;
+function openQuestion(){
+  paused=true; triesLeft=2;
+  currentQ = LEVELS[level].genQ();
+  document.getElementById('questionText').textContent = `${currentQ.a} × ${currentQ.b}`;
+  document.getElementById('triesMsg').textContent = 'Tienes 2 intentos';
+  document.getElementById('triesMsg').style.color = '#fff';
+  const inp=document.getElementById('answerInput'); inp.value='';
+  show('questionScreen'); setTimeout(()=>inp.focus(),80);
+  timerDur = LEVELS[level].timer*1000; timerStart=performance.now();
+  cancelAnimationFrame(timerId);
+  (function tick(){
+    const left = 1-(performance.now()-timerStart)/timerDur;
+    document.getElementById('timerFill').style.width=Math.max(left*100,0)+'%';
+    if(left<=0){ hide('questionScreen'); die(`¡Se acabó el tiempo! Era ${currentQ.a} × ${currentQ.b} = ${currentQ.ans}`); return; }
+    if(!document.getElementById('questionScreen').classList.contains('hidden')) timerId=requestAnimationFrame(tick);
+  })();
+}
+function submitAnswer(){
+  const inp=document.getElementById('answerInput');
+  const v = parseInt(inp.value,10);
+  if(v===currentQ.ans){ hide('questionScreen'); paused=false; return; }
+  triesLeft--;
+  if(triesLeft>0){
+    const m=document.getElementById('triesMsg');
+    m.textContent='❌ Incorrecto... ¡te queda 1 intento!';
+    m.style.color='#ff4d4d';
+    inp.value=''; inp.focus();
+  } else {
+    hide('questionScreen');
+    die(`Incorrecto 😬 ${currentQ.a} × ${currentQ.b} = ${currentQ.ans}`);
+  }
+}
+document.getElementById('answerBtn').onclick=submitAnswer;
+document.getElementById('answerInput').addEventListener('keydown',e=>{ if(e.key==='Enter') submitAnswer(); });
+
+// ================= MISIÓN DE PAPEL (FOTO + IA) =================
+let photoB64=null, photoType=null;
+function resetPaperUI(){
+  photoB64=null;
+  document.getElementById('photoPreview').classList.add('hidden');
+  document.getElementById('verifyBtn').classList.add('hidden');
+  document.getElementById('nextLevelBtn').classList.add('hidden');
+  document.getElementById('verdict').classList.add('hidden');
+  document.getElementById('spinner').classList.add('hidden');
+  document.getElementById('photoBtns').classList.remove('hidden');
+  document.getElementById('photoInput').value='';
+  document.getElementById('cameraInput').value='';
+}
+function handlePhoto(e){
+  const f=e.target.files[0]; if(!f) return;
+  photoType = f.type || 'image/jpeg';
+  const r=new FileReader();
+  r.onload=()=>{ photoB64=r.result.split(',')[1];
+    const img=document.getElementById('photoPreview'); img.src=r.result; img.classList.remove('hidden');
+    document.getElementById('verifyBtn').classList.remove('hidden');
+    document.getElementById('verdict').classList.add('hidden');
+  };
+  r.readAsDataURL(f);
+}
+document.getElementById('photoInput').addEventListener('change', handlePhoto);
+document.getElementById('cameraInput').addEventListener('change', handlePhoto);
+document.getElementById('verifyBtn').onclick = verifyPhoto;
+
+async function verifyPhoto(){
+  if(!photoB64) return;
+  document.getElementById('spinner').classList.remove('hidden');
+  document.getElementById('verifyBtn').disabled=true;
+  const opsDesc = paperOps.map((o,i)=>`${String.fromCharCode(65+i)}) ${o.a} × ${o.b} = ${o.ans}`).join('\n');
+  const prompt = `Eres el juez de un juego educativo de multiplicaciones. El estudiante debía resolver A MANO en papel estas operaciones (aquí con la respuesta correcta):\n${opsDesc}\n\nRevisa la foto adjunta de su hoja. Verifica que: (1) las operaciones aparezcan escritas a mano, (2) los resultados escritos coincidan con las respuestas correctas.\nSé un poco flexible con la caligrafía, pero estricto con los números del resultado.\nResponde SOLO con JSON válido, sin backticks ni texto extra, con esta forma exacta:\n{"aprobado": true|false, "correctas": <número de operaciones bien resueltas de 4>, "comentario": "<máx 2 frases en español, tono motivador, di cuáles fallaron si aplica>"}`;
+  try{
+    const res = await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        model:'claude-sonnet-4-6', max_tokens:1000,
+        messages:[{role:'user',content:[
+          {type:'image', source:{type:'base64', media_type:photoType, data:photoB64}},
+          {type:'text', text:prompt}
+        ]}]
+      })
+    });
+    const data = await res.json();
+    const txt = (data.content||[]).filter(c=>c.type==='text').map(c=>c.text).join('\n');
+    const clean = txt.replace(/```json|```/g,'').trim();
+    const j = JSON.parse(clean);
+    const v = document.getElementById('verdict');
+    v.classList.remove('hidden','ok','bad');
+    if(j.aprobado){
+      v.classList.add('ok');
+      v.innerHTML = `✅ <b>¡Aprobado! ${j.correctas}/4 correctas.</b><br>${j.comentario||''}`;
+      document.getElementById('nextLevelBtn').classList.remove('hidden');
+      document.getElementById('verifyBtn').classList.add('hidden');
+      document.getElementById('photoBtns').classList.add('hidden');
+    } else {
+      v.classList.add('bad');
+      v.innerHTML = `❌ <b>Aún no: ${j.correctas||0}/4 correctas.</b><br>${j.comentario||''}<br>Corrige en tu hoja y sube otra foto.`;
+    }
+  }catch(err){
+    const v=document.getElementById('verdict');
+    v.classList.remove('hidden','ok'); v.classList.add('bad');
+    v.textContent='No pude verificar la foto (error de conexión o imagen ilegible). Intenta de nuevo con una foto más clara.';
+  }finally{
+    document.getElementById('spinner').classList.add('hidden');
+    document.getElementById('verifyBtn').disabled=false;
+  }
+}
+
+document.getElementById('nextLevelBtn').onclick=()=>{
+  hide('paperScreen');
+  if(level < LEVELS.length-1){ level++; attempts=1; buildLevel(); }
+  else {
+    document.getElementById('finalStats').textContent=`Total de intentos en toda la partida: ${totalAttempts+3}`;
+    show('winScreen');
+  }
+};
+
+// ================= FLUJO GENERAL =================
+function show(id){document.getElementById(id).classList.remove('hidden')}
+function hide(id){document.getElementById(id).classList.add('hidden')}
+document.getElementById('startBtn').onclick=()=>{ hide('startScreen'); running=true; last=performance.now(); buildLevel(); };
+document.getElementById('restartBtn').onclick=()=>{ hide('winScreen'); level=0; attempts=1; totalAttempts=0; buildLevel(); };
+</script>
+</body>
+</html>
