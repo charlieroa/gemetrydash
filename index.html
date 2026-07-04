@@ -49,6 +49,11 @@
   .verdict{margin-top:14px;padding:12px;border-radius:10px;font-size:clamp(12px,3vw,15px);line-height:1.5}
   .verdict.ok{background:rgba(61,255,143,.12);border:1px solid var(--ok)}
   .verdict.bad{background:rgba(255,77,77,.12);border:1px solid var(--bad)}
+  .expl{background:rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.2);border-radius:10px;padding:12px;margin-top:12px;text-align:left}
+  .expl h3{font-size:clamp(13px,3vw,15px);margin-bottom:8px;color:var(--neon)}
+  .expl pre{font-family:'Consolas','Courier New',monospace;font-size:clamp(13px,3.2vw,16px);line-height:1.6;overflow-x:auto;color:#fff}
+  .expl pre b{color:var(--ok)}
+  .expl ol{margin:8px 0 0 20px;font-size:clamp(12px,2.8vw,14px);line-height:1.6}
   .hidden{display:none!important}
   @media (prefers-reduced-motion: reduce){ .spinner{animation-duration:1.6s} }
 </style>
@@ -675,12 +680,60 @@ document.getElementById('photoInput').addEventListener('change', handlePhoto);
 document.getElementById('cameraInput').addEventListener('change', handlePhoto);
 document.getElementById('verifyBtn').onclick = verifyPhoto;
 
+// Explicación paso a paso como en el colegio: en columnas, llevando y sumando.
+// Funciona para multiplicadores de 1, 2, 3 o 4 cifras.
+function carrySteps(a, d){
+  // pasos con "llevadas" al multiplicar a × d (d de 1 cifra)
+  const as=String(a), steps=[]; let carry=0;
+  for(let i=as.length-1;i>=0;i--){
+    const dig=+as[i], prod=dig*d+carry;
+    const write=prod%10, newCarry=Math.floor(prod/10);
+    let s=`${d} × ${dig} = ${dig*d}`;
+    if(carry) s+=` + ${carry} que llevabas = ${prod}`;
+    if(i>0){ s+=`: escribe el <b>${write}</b>`; if(newCarry) s+=` y llevas ${newCarry}`; }
+    else { s+=`: escribe <b>${prod}</b>`; }
+    steps.push(s);
+    carry=newCarry;
+  }
+  return steps;
+}
+function renderExplanation(op, letter){
+  const a=op.a, b=op.b, ans=op.ans;
+  const bs=String(b);
+  // una fila parcial por cada cifra del multiplicador, de derecha a izquierda
+  const rows=[];
+  for(let i=bs.length-1;i>=0;i--){
+    const d=+bs[i], shift=bs.length-1-i;
+    rows.push({d, shift, val:a*d});
+  }
+  const W=Math.max(String(ans).length, String(a).length, bs.length+2)+2;
+  const pad=(s,extra=0)=>String(s).padStart(W-extra,' ')+' '.repeat(extra);
+  let pre=pad(a)+'\n'+pad('× '+bs)+'\n'+'─'.repeat(W)+'\n';
+  if(rows.length===1){
+    pre+='<b>'+pad(ans)+'</b>';
+  } else {
+    for(const r of rows) pre+=pad(r.val,r.shift)+'\n';
+    pre+='─'.repeat(W)+'\n<b>'+pad(ans)+'</b>';
+  }
+  const steps=[];
+  if(rows.length===1){
+    steps.push(...carrySteps(a,+bs));
+  } else {
+    const lugares=['unidades','decenas','centenas','unidades de mil'];
+    rows.forEach(r=>{
+      steps.push(`Multiplica ${a} × <b>${r.d}</b> (${lugares[r.shift]||''}) = ${r.val}${r.shift?`, escríbelo abajo corrido ${r.shift} lugar${r.shift>1?'es':''} a la izquierda`:''}`);
+    });
+    steps.push(`Suma todas las filas y te da <b>${ans}</b>`);
+  }
+  return `<div class="expl"><h3>📖 Así se hace la ${letter}) ${a} × ${b}, como en el colegio:</h3><pre>${pre}</pre><ol>${steps.map(s=>`<li>${s}</li>`).join('')}</ol></div>`;
+}
+
 async function verifyPhoto(){
   if(!photoB64) return;
   document.getElementById('spinner').classList.remove('hidden');
   document.getElementById('verifyBtn').disabled=true;
   const opsDesc = paperOps.map((o,i)=>`${String.fromCharCode(65+i)}) ${o.a} × ${o.b} = ${o.ans}`).join('\n');
-  const prompt = `Eres el juez de un juego educativo de multiplicaciones. El estudiante debía resolver A MANO en papel estas operaciones (aquí con la respuesta correcta):\n${opsDesc}\n\nRevisa la foto adjunta de su hoja. Verifica que: (1) las operaciones aparezcan escritas a mano, (2) los resultados escritos coincidan con las respuestas correctas.\nSé un poco flexible con la caligrafía, pero estricto con los números del resultado.\nResponde SOLO con JSON válido, sin backticks ni texto extra, con esta forma exacta:\n{"aprobado": true|false, "correctas": <número de operaciones bien resueltas de 4>, "comentario": "<máx 2 frases en español, tono motivador, di cuáles fallaron si aplica>"}`;
+  const prompt = `Eres el juez de un juego educativo de multiplicaciones. El estudiante debía resolver A MANO en papel estas operaciones (aquí con la respuesta correcta):\n${opsDesc}\n\nRevisa la foto adjunta de su hoja siguiendo estos pasos:\n1. TRANSCRIBE cuidadosamente cada operación y el resultado que el estudiante escribió. Lee con mucha atención la caligrafía infantil: un 1 puede parecer 7, un 4 puede parecer 9, un 0 puede parecer 6.\n2. Compara cada resultado transcrito con la respuesta correcta.\n3. Si un dígito es ambiguo o borroso pero PODRÍA ser el correcto, da el beneficio de la duda al estudiante y cuéntalo como correcto.\nSolo marca una operación como incorrecta si el resultado escrito es CLARAMENTE distinto al correcto.\nResponde SOLO con JSON válido, sin backticks ni texto extra, con esta forma exacta:\n{"aprobado": true|false, "correctas": <número de operaciones bien resueltas de 4>, "falladas": [<letras de las operaciones incorrectas, ej: "A","C"; lista vacía si todas están bien>], "comentario": "<máx 2 frases en español, tono motivador; si algo falló, di qué operación y qué número leíste>"}`;
   try{
     const res = await fetch('/api/verify',{
       method:'POST', headers:{'Content-Type':'application/json'},
@@ -701,6 +754,13 @@ async function verifyPhoto(){
     } else {
       v.classList.add('bad');
       v.innerHTML = `❌ <b>Aún no: ${j.correctas||0}/4 correctas.</b><br>${j.comentario||''}<br>Corrige en tu hoja y sube otra foto.`;
+      // enseñar cómo se hace cada operación fallada, como en el colegio
+      const falladas = Array.isArray(j.falladas) ? j.falladas : [];
+      for(const L of falladas){
+        const letter=String(L).trim().toUpperCase();
+        const idx=letter.charCodeAt(0)-65;
+        if(paperOps[idx]) v.innerHTML += renderExplanation(paperOps[idx], letter);
+      }
     }
   }catch(err){
     const v=document.getElementById('verdict');

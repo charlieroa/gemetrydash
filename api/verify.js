@@ -24,8 +24,8 @@ export default async function handler(req, res) {
         'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        max_tokens: 500,
+        model: 'gpt-4o',
+        max_tokens: 800,
         response_format: { type: 'json_object' },
         messages: [
           {
@@ -33,7 +33,7 @@ export default async function handler(req, res) {
             content: [
               {
                 type: 'image_url',
-                image_url: { url: `data:${mediaType || 'image/jpeg'};base64,${image}` },
+                image_url: { url: `data:${mediaType || 'image/jpeg'};base64,${image}`, detail: 'high' },
               },
               { type: 'text', text: prompt },
             ],
