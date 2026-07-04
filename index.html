@@ -60,6 +60,7 @@
   <div class="hud">
     <div class="lvl" id="hudLevel">NIVEL 1</div>
     <div style="display:flex;align-items:center;gap:12px">
+      <div class="att" id="hudCoins">🪙 0</div>
       <div class="att" id="hudAttempts">Intento 1</div>
       <button class="muteBtn" id="muteBtn" title="Silenciar">🔊</button>
     </div>
@@ -71,7 +72,7 @@
     <div class="card">
       <h1>MULTI DASH</h1>
       <p><b>Geometry Dash de multiplicaciones.</b><br><br>
-      Salta los pinchos con <b>ESPACIO</b>, clic o toque. Súbete a las <b>plataformas flotantes</b> para esquivar pinchos y ¡pilas con los <b>meteoritos ☄️</b> que caen del cielo! Cuando veas el ⚠ parpadeando, no pases por ahí.<br><br>
+      Salta los pinchos con <b>ESPACIO</b>, clic o toque. Súbete a las <b>plataformas flotantes</b>, usa los <b>pads amarillos 🟡</b> que te lanzan por los aires y toca los <b>orbes ✨</b> en pleno vuelo para dar un salto extra. Recoge <b>monedas 🪙</b> y ¡pilas con los <b>meteoritos ☄️</b> que caen rapidísimo! Cuando veas el ⚠ parpadeando, no pases por ahí.<br><br>
       En el camino hay <b>portales de multiplicación</b>: tienes <b>2 intentos</b> para responder bien; si fallas los dos (o se acaba el tiempo) ¡explotas! 💥<br><br>
       🟦 Nivel 1: tablas de 1 cifra<br>
       🟪 Nivel 2: multiplicaciones de 2 cifras<br>
@@ -176,6 +177,9 @@ const SFX = {
   win(){ [523,659,784,1046,784,1046,1318].forEach((f,i)=>tone(f,0.22,'triangle',0.18,null,i*0.13)); },
   meteorWarn(){ tone(920,0.09,'square',0.09); tone(920,0.09,'square',0.09,null,0.16); },
   meteorHit(){ noise(0.25,0.18); tone(140,0.3,'sine',0.22,45); },
+  pad(){ tone(180,0.22,'square',0.14,950); },
+  orb(){ tone(480,0.14,'sine',0.14,1100); },
+  coin(){ tone(1318,0.08,'square',0.09); tone(1760,0.12,'square',0.09,null,0.06); },
   land(){ tone(160,0.06,'triangle',0.06); },
   click(){ tone(720,0.07,'square',0.07); },
   tick(){ tone(1050,0.05,'square',0.06); }
@@ -232,6 +236,8 @@ function q(a,b){return {a,b,ans:a*b}}
 let level = 0, attempts = 1, totalAttempts = 0;
 let running=false, dead=false, paused=false;
 let paperOps = [];
+let coinsTotal=0, coinsRun=0;
+function updateCoinHud(){ document.getElementById('hudCoins').textContent='🪙 '+(coinsTotal+coinsRun); }
 
 // ================= CANVAS =================
 const cv = document.getElementById('game'), ctx = cv.getContext('2d');
@@ -247,33 +253,43 @@ const player = { x:110, y:0, size:40, vy:0, rot:0, onGround:true };
 const GRAV = 0.85, JUMP = -14.5;
 
 // ================= MUNDO =================
-let camX=0, obstacles=[], gates=[], particles=[], deadFx=[], meteors=[];
+let camX=0, obstacles=[], gates=[], particles=[], deadFx=[], meteors=[], orbs=[], coins=[];
 function buildLevel(){
-  camX=0; obstacles=[]; gates=[]; particles=[]; deadFx=[]; meteors=[];
+  camX=0; obstacles=[]; gates=[]; particles=[]; deadFx=[]; meteors=[]; orbs=[]; coins=[];
+  coinsRun=0;
   player.y=groundY-player.size; player.vy=0; player.rot=0; player.onGround=true;
   dead=false; paused=false;
   // pinchos, bloques y plataformas flotantes
   let x=700;
   while(x < LEVEL_LENGTH-500){
     const type = Math.random();
-    if(type<0.42){ // grupo de pinchos (1-2)
-      const n = Math.random()<0.6?1:2;
+    if(type<0.34){ // grupo de pinchos (1-3)
+      const n = Math.random()<0.5?1:(Math.random()<0.7?2:3);
       for(let i=0;i<n;i++) obstacles.push({kind:'spike', x:x+i*34, w:34, h:34});
+      if(n>=2 && Math.random()<0.6) orbs.push({x:x+n*17, y:groundY-130, used:false});
+      if(Math.random()<0.5) for(let i=0;i<3;i++) coins.push({x:x+n*17+(i-1)*42, y:groundY-155, got:false});
       x += 120+n*34;
-    } else if(type<0.62){ // bloque para saltar encima
+    } else if(type<0.52){ // bloque para saltar encima
       obstacles.push({kind:'block', x:x, w:60, h:52});
+      if(Math.random()<0.5) coins.push({x:x+30, y:groundY-95, got:false});
       x += 200;
-    } else if(type<0.82){ // plataforma flotante sobre pinchos: toca subirse
+    } else if(type<0.70){ // plataforma flotante sobre pinchos: toca subirse
       const fy = groundY-115;
       obstacles.push({kind:'spike', x:x+55, w:34, h:34});
       obstacles.push({kind:'spike', x:x+89, w:34, h:34});
       obstacles.push({kind:'float', x:x, w:130, h:16, y:fy});
+      for(let i=0;i<3;i++) coins.push({x:x+25+i*40, y:fy-35, got:false});
       if(Math.random()<0.5) obstacles.push({kind:'float', x:x+210, w:110, h:16, y:fy-40});
       x += 400;
-    } else { // pincho sobre bloque bajo -> salto largo
+    } else if(type<0.86){ // pincho sobre bloque bajo -> salto largo
       obstacles.push({kind:'block', x:x, w:50, h:34});
       obstacles.push({kind:'spike', x:x+120, w:34, h:34});
       x += 280;
+    } else { // pad de salto que te lanza sobre un muro de pinchos
+      obstacles.push({kind:'pad', x:x, w:46, h:10});
+      for(let i=0;i<4;i++) obstacles.push({kind:'spike', x:x+120+i*34, w:34, h:34});
+      for(let i=0;i<3;i++) coins.push({x:x+130+i*45, y:groundY-200, got:false});
+      x += 380;
     }
     x += rnd(120,260) * (LEVELS[level].speed/5.2);
   }
@@ -289,6 +305,8 @@ function buildLevel(){
     // limpiar obstáculos y meteoritos cerca del portal
     obstacles = obstacles.filter(o=>Math.abs(o.x-gx)>200);
     meteors = meteors.filter(m=>Math.abs(m.x-gx)>320);
+    orbs = orbs.filter(o=>Math.abs(o.x-gx)>200);
+    coins = coins.filter(c=>Math.abs(c.x-gx)>200);
     gates.push({x:gx, used:false});
   }
   updateHud();
@@ -296,11 +314,25 @@ function buildLevel(){
 function updateHud(){
   document.getElementById('hudLevel').textContent = LEVELS[level].name;
   document.getElementById('hudAttempts').textContent = 'Intento '+attempts;
+  updateCoinHud();
   document.documentElement.style.setProperty('--neon', LEVELS[level].accent);
 }
 
 // ================= INPUT =================
-function jump(){ if(running && !paused && !dead && player.onGround){ player.vy=JUMP; player.onGround=false; SFX.jump(); } }
+function jump(){
+  if(!running || paused || dead) return;
+  if(player.onGround){ player.vy=JUMP; player.onGround=false; SFX.jump(); return; }
+  // orbe: tocar en el aire cerca de un orbe da un salto extra
+  const pcx=player.x+player.size/2, pcy=player.y+player.size/2;
+  for(const o of orbs){
+    const ox=o.x-camX;
+    if(!o.used && Math.abs(ox-pcx)<52 && Math.abs(o.y-pcy)<58){
+      o.used=true; player.vy=JUMP; SFX.orb();
+      for(let i=0;i<10;i++) particles.push({x:ox+rnd(-10,10), y:o.y+rnd(-10,10), life:1});
+      return;
+    }
+  }
+}
 addEventListener('keydown',e=>{ if(e.code==='Space'){ e.preventDefault(); jump(); }});
 cv.addEventListener('pointerdown',jump);
 
@@ -342,16 +374,30 @@ function update(dt){
         if(player.vy>=0 && py+ps-player.vy*dt <= by+14){ /* aterrizó */ }
         else return die('Chocaste de frente con un bloque.');
       }
+    } else if(o.kind==='pad'){ // pad amarillo: te lanza por los aires
+      if(py+ps >= groundY-16 && ox < px+ps-8 && ox+o.w > px+4 && player.vy>=0){
+        player.vy = JUMP*1.5; player.onGround=false; SFX.pad();
+        for(let i=0;i<8;i++) particles.push({x:px+rnd(0,ps), y:groundY-6, life:1});
+      }
     }
     // 'float': atravesable desde abajo, solo se pisa (ver getFloorY)
+  }
+  // monedas 🪙
+  for(const c of coins){
+    if(c.got) continue;
+    const cx=c.x-camX;
+    if(Math.abs(cx-(px+ps/2))<28 && Math.abs(c.y-(py+ps/2))<32){
+      c.got=true; coinsRun++; SFX.coin(); updateCoinHud();
+      for(let i=0;i<6;i++) particles.push({x:cx+rnd(-8,8), y:c.y+rnd(-8,8), life:1});
+    }
   }
   // meteoritos ☄️
   for(const m of meteors){
     const mx = m.x - camX;
-    if(m.state==='idle' && mx < innerWidth*0.85 && mx > 0){ m.state='warn'; m.warn=46; SFX.meteorWarn(); }
-    if(m.state==='warn'){ m.warn-=dt; if(m.warn<=0) m.state='fall'; }
+    if(m.state==='idle' && mx < innerWidth*0.85 && mx > 0){ m.state='warn'; m.warn=30; SFX.meteorWarn(); }
+    if(m.state==='warn'){ m.warn-=dt; if(m.warn<=0){ m.state='fall'; m.vy=5; } }
     if(m.state==='fall'){
-      m.vy += 0.55*dt; m.y += m.vy*dt;
+      m.vy += 1.1*dt; m.y += m.vy*dt;
       // colisión círculo-cubo
       const cx=Math.max(px,Math.min(mx,px+ps)), cy=Math.max(py,Math.min(m.y,py+ps));
       if((mx-cx)**2 + (m.y-cy)**2 < m.r*m.r) return die('☄️ ¡Un meteorito te aplastó!');
@@ -416,10 +462,41 @@ function draw(t){
       ctx.fillRect(ox, o.y+bob, o.w, o.h); ctx.strokeRect(ox, o.y+bob, o.w, o.h);
       ctx.shadowBlur=0;
       ctx.fillStyle='rgba(255,255,255,0.35)'; ctx.fillRect(ox, o.y+bob, o.w, 3);
+    } else if(o.kind==='pad'){
+      const glow = 0.6+Math.sin(t/170)*0.4;
+      ctx.shadowColor='#ffd24d'; ctx.shadowBlur=16*glow;
+      ctx.fillStyle='#ffd24d';
+      ctx.beginPath(); ctx.ellipse(ox+o.w/2, groundY-3, o.w/2, 9, 0, Math.PI, 0); ctx.fill();
+      ctx.fillStyle='#fff3b0';
+      ctx.beginPath(); ctx.ellipse(ox+o.w/2, groundY-3, o.w/4, 4, 0, Math.PI, 0); ctx.fill();
+      ctx.shadowBlur=0;
     } else {
       ctx.fillStyle='rgba(255,255,255,0.12)'; ctx.strokeStyle=L.accent; ctx.lineWidth=2;
       ctx.fillRect(ox,groundY-o.h,o.w,o.h); ctx.strokeRect(ox,groundY-o.h,o.w,o.h);
     }
+  }
+  // orbes de salto
+  for(const o of orbs){
+    const ox=o.x-camX; if(ox<-60||ox>innerWidth+60) continue;
+    const pulse=1+Math.sin(t/160)*0.15;
+    ctx.save(); ctx.translate(ox,o.y); ctx.scale(pulse,pulse);
+    ctx.strokeStyle= o.used?'rgba(255,255,255,0.2)':'#ffd24d';
+    ctx.shadowColor='#ffd24d'; ctx.shadowBlur=o.used?0:16; ctx.lineWidth=3;
+    ctx.beginPath(); ctx.arc(0,0,16,0,Math.PI*2); ctx.stroke();
+    ctx.fillStyle= o.used?'rgba(255,255,255,0.12)':'rgba(255,210,77,0.55)';
+    ctx.beginPath(); ctx.arc(0,0,9,0,Math.PI*2); ctx.fill();
+    ctx.shadowBlur=0; ctx.restore();
+  }
+  // monedas
+  for(const c of coins){
+    if(c.got) continue;
+    const cx=c.x-camX; if(cx<-40||cx>innerWidth+40) continue;
+    const spin=Math.abs(Math.sin(t/280 + c.x));
+    ctx.save(); ctx.translate(cx,c.y); ctx.scale(0.25+spin*0.75,1);
+    ctx.shadowColor='#ffd700'; ctx.shadowBlur=10;
+    ctx.fillStyle='#ffd700'; ctx.beginPath(); ctx.arc(0,0,11,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='#fff3b0'; ctx.beginPath(); ctx.arc(0,0,6,0,Math.PI*2); ctx.fill();
+    ctx.shadowBlur=0; ctx.restore();
   }
   // portales
   for(const gt of gates){
@@ -479,6 +556,7 @@ document.getElementById('retryBtn').onclick=()=>{ SFX.click(); hide('deathScreen
 function levelComplete(){
   paused=true;
   stopMusic(); SFX.win();
+  coinsTotal+=coinsRun; coinsRun=0; updateCoinHud();
   paperOps = LEVELS[level].genPaper();
   const list=document.getElementById('paperOps');
   list.innerHTML = paperOps.map((o,i)=>`<li>${String.fromCharCode(65+i)}) &nbsp;${o.a} × ${o.b} = ______</li>`).join('');
@@ -602,7 +680,7 @@ document.getElementById('nextLevelBtn').onclick=()=>{
   hide('paperScreen');
   if(level < LEVELS.length-1){ level++; attempts=1; buildLevel(); startMusic(); }
   else {
-    document.getElementById('finalStats').textContent=`Total de intentos en toda la partida: ${totalAttempts+3}`;
+    document.getElementById('finalStats').textContent=`Total de intentos: ${totalAttempts+3} · Monedas: 🪙 ${coinsTotal}`;
     show('winScreen'); SFX.win();
   }
 };
@@ -611,7 +689,7 @@ document.getElementById('nextLevelBtn').onclick=()=>{
 function show(id){document.getElementById(id).classList.remove('hidden')}
 function hide(id){document.getElementById(id).classList.add('hidden')}
 document.getElementById('startBtn').onclick=()=>{ initAudio(); SFX.click(); hide('startScreen'); running=true; last=performance.now(); buildLevel(); startMusic(); };
-document.getElementById('restartBtn').onclick=()=>{ initAudio(); SFX.click(); hide('winScreen'); level=0; attempts=1; totalAttempts=0; buildLevel(); startMusic(); };
+document.getElementById('restartBtn').onclick=()=>{ initAudio(); SFX.click(); hide('winScreen'); level=0; attempts=1; totalAttempts=0; coinsTotal=0; buildLevel(); startMusic(); };
 </script>
 </body>
 </html>
