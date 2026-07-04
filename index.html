@@ -40,7 +40,13 @@
   .timerFill{height:100%;width:100%;background:linear-gradient(90deg,var(--ok),#c8ff4d)}
 
   .opsList{list-style:none;margin:14px 0;display:grid;gap:8px}
-  .opsList li{font-size:clamp(16px,4.2vw,22px);font-weight:700;background:rgba(0,229,255,.08);border:1px solid rgba(0,229,255,.3);border-radius:10px;padding:10px;letter-spacing:1px}
+  .opsList li{font-size:clamp(16px,4.2vw,22px);font-weight:700;background:rgba(0,229,255,.08);border:1px solid rgba(0,229,255,.3);border-radius:10px;padding:10px;letter-spacing:1px;display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap}
+  .opsList li input{font-family:'Orbitron',sans-serif;font-size:clamp(15px,3.8vw,20px);font-weight:700;text-align:center;width:110px;padding:6px;border-radius:8px;border:2px solid rgba(0,229,255,.5);background:#050a24;color:#fff;outline:none}
+  .opsList li input:focus{box-shadow:0 0 12px rgba(0,229,255,.5)}
+  .opsList li.good{border-color:var(--ok);box-shadow:0 0 12px rgba(61,255,143,.35)}
+  .opsList li.good input{border-color:var(--ok)}
+  .opsList li.wrong{border-color:var(--bad);box-shadow:0 0 12px rgba(255,77,77,.35)}
+  .opsList li.wrong input{border-color:var(--bad)}
   .hint{font-size:clamp(11px,2.4vw,13px);opacity:.7;margin-top:8px}
   input[type=file]{display:none}
   .preview{max-width:100%;max-height:190px;border-radius:12px;margin-top:12px;border:2px solid rgba(255,255,255,.25)}
@@ -82,7 +88,7 @@
       🟦 Nivel 1: tablas de 1 cifra<br>
       🟪 Nivel 2: multiplicaciones de 2 cifras<br>
       🟥 Nivel 3: multiplicaciones de 3 cifras<br><br>
-      Al terminar cada nivel viene la <b>misión de papel</b>: resuelves multiplicaciones a mano, subes la foto y una IA revisa tus resultados. Si todo está bien... ¡desbloqueas el siguiente nivel!</p>
+      Al terminar cada nivel viene la <b>misión de papel</b>: resuelves multiplicaciones a mano en tu hoja, escribes los resultados y el juego te revisa. Si fallas alguna, ¡te enseña paso a paso cómo se hace! Cuando todas estén bien... ¡desbloqueas el siguiente nivel!</p>
       <button class="btn" id="startBtn">▶ JUGAR</button>
     </div>
   </div>
@@ -113,19 +119,11 @@
   <div class="overlay hidden" id="paperScreen">
     <div class="card">
       <h2>📝 MISIÓN DE PAPEL</h2>
-      <p>¡Completaste la pista! Para desbloquear el siguiente nivel, resuelve estas multiplicaciones <b>a mano en una hoja</b> (escribe la operación y el resultado) y sube la foto:</p>
+      <p>¡Completaste la pista! Resuelve estas multiplicaciones <b>a mano en una hoja</b> (con tu método de columnas) y escribe aquí los resultados:</p>
       <ul class="opsList" id="paperOps"></ul>
-      <p class="hint">Tip: buena luz, letra clara y que se vean las 4 operaciones completas.</p>
-      <div id="photoBtns" style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
-        <label class="btn" for="cameraInput">📷 TOMAR FOTO</label>
-        <label class="btn pink" for="photoInput">🖼️ GALERÍA</label>
-      </div>
-      <input type="file" id="cameraInput" accept="image/*" capture="environment">
-      <input type="file" id="photoInput" accept="image/*">
-      <img class="preview hidden" id="photoPreview" alt="Vista previa de tu hoja">
-      <div class="spinner hidden" id="spinner"></div>
+      <p class="hint">Hazlas primero en tu hoja, ¡nada de calculadora! 😄</p>
+      <button class="btn" id="checkPaperBtn">✅ COMPROBAR</button>
       <div class="verdict hidden" id="verdict"></div>
-      <button class="btn hidden" id="verifyBtn">✅ VERIFICAR CON IA</button>
       <button class="btn hidden" id="nextLevelBtn">🚀 SIGUIENTE NIVEL</button>
     </div>
   </div>
@@ -593,9 +591,17 @@ function levelComplete(){
   paused=true;
   stopMusic(); SFX.win();
   coinsTotal+=coinsRun; coinsRun=0; updateCoinHud();
+  // generar 4 operaciones sin repetidas
   paperOps = LEVELS[level].genPaper();
+  let guard=0;
+  while(guard++<30 && new Set(paperOps.map(o=>o.a+'x'+o.b)).size < paperOps.length){
+    paperOps = LEVELS[level].genPaper();
+  }
   const list=document.getElementById('paperOps');
-  list.innerHTML = paperOps.map((o,i)=>`<li>${String.fromCharCode(65+i)}) &nbsp;${o.a} × ${o.b} = ______</li>`).join('');
+  list.innerHTML = paperOps.map((o,i)=>`<li id="pli${i}">${String.fromCharCode(65+i)}) &nbsp;${o.a} × ${o.b} = <input id="pin${i}" type="number" inputmode="numeric" placeholder="?" autocomplete="off"></li>`).join('');
+  list.querySelectorAll('input').forEach(inp=>inp.addEventListener('keydown',e=>{
+    if(e.key==='Enter') document.getElementById('checkPaperBtn').click();
+  }));
   resetPaperUI();
   show('paperScreen');
 }
@@ -640,45 +646,12 @@ function submitAnswer(){
 document.getElementById('answerBtn').onclick=submitAnswer;
 document.getElementById('answerInput').addEventListener('keydown',e=>{ if(e.key==='Enter') submitAnswer(); });
 
-// ================= MISIÓN DE PAPEL (FOTO + IA) =================
-let photoB64=null, photoType=null;
+// ================= MISIÓN DE PAPEL (respuestas escritas) =================
 function resetPaperUI(){
-  photoB64=null;
-  document.getElementById('photoPreview').classList.add('hidden');
-  document.getElementById('verifyBtn').classList.add('hidden');
   document.getElementById('nextLevelBtn').classList.add('hidden');
   document.getElementById('verdict').classList.add('hidden');
-  document.getElementById('spinner').classList.add('hidden');
-  document.getElementById('photoBtns').classList.remove('hidden');
-  document.getElementById('photoInput').value='';
-  document.getElementById('cameraInput').value='';
+  document.getElementById('checkPaperBtn').classList.remove('hidden');
 }
-function handlePhoto(e){
-  const f=e.target.files[0]; if(!f) return;
-  const r=new FileReader();
-  r.onload=()=>{
-    // reescalar a máx 1280px y comprimir a JPEG para no pasar el límite del servidor
-    const img=new Image();
-    img.onload=()=>{
-      const MAX=1280;
-      const sc=Math.min(1, MAX/Math.max(img.width,img.height));
-      const c=document.createElement('canvas');
-      c.width=Math.round(img.width*sc); c.height=Math.round(img.height*sc);
-      c.getContext('2d').drawImage(img,0,0,c.width,c.height);
-      const dataUrl=c.toDataURL('image/jpeg',0.85);
-      photoType='image/jpeg';
-      photoB64=dataUrl.split(',')[1];
-      const prev=document.getElementById('photoPreview'); prev.src=dataUrl; prev.classList.remove('hidden');
-      document.getElementById('verifyBtn').classList.remove('hidden');
-      document.getElementById('verdict').classList.add('hidden');
-    };
-    img.src=r.result;
-  };
-  r.readAsDataURL(f);
-}
-document.getElementById('photoInput').addEventListener('change', handlePhoto);
-document.getElementById('cameraInput').addEventListener('change', handlePhoto);
-document.getElementById('verifyBtn').onclick = verifyPhoto;
 
 // Explicación paso a paso como en el colegio: en columnas, llevando y sumando.
 // Funciona para multiplicadores de 1, 2, 3 o 4 cifras.
@@ -728,49 +701,30 @@ function renderExplanation(op, letter){
   return `<div class="expl"><h3>📖 Así se hace la ${letter}) ${a} × ${b}, como en el colegio:</h3><pre>${pre}</pre><ol>${steps.map(s=>`<li>${s}</li>`).join('')}</ol></div>`;
 }
 
-async function verifyPhoto(){
-  if(!photoB64) return;
-  document.getElementById('spinner').classList.remove('hidden');
-  document.getElementById('verifyBtn').disabled=true;
-  const opsDesc = paperOps.map((o,i)=>`${String.fromCharCode(65+i)}) ${o.a} × ${o.b} = ${o.ans}`).join('\n');
-  const prompt = `Eres el juez de un juego educativo de multiplicaciones. El estudiante debía resolver A MANO en papel estas operaciones (aquí con la respuesta correcta):\n${opsDesc}\n\nRevisa la foto adjunta de su hoja siguiendo estos pasos:\n1. TRANSCRIBE cuidadosamente cada operación y el resultado que el estudiante escribió. Lee con mucha atención la caligrafía infantil: un 1 puede parecer 7, un 4 puede parecer 9, un 0 puede parecer 6.\n2. Compara cada resultado transcrito con la respuesta correcta.\n3. Si un dígito es ambiguo o borroso pero PODRÍA ser el correcto, da el beneficio de la duda al estudiante y cuéntalo como correcto.\nSolo marca una operación como incorrecta si el resultado escrito es CLARAMENTE distinto al correcto.\nResponde SOLO con JSON válido, sin backticks ni texto extra, con esta forma exacta:\n{"aprobado": true|false, "correctas": <número de operaciones bien resueltas de 4>, "falladas": [<letras de las operaciones incorrectas, ej: "A","C"; lista vacía si todas están bien>], "comentario": "<máx 2 frases en español, tono motivador; si algo falló, di qué operación y qué número leíste>"}`;
-  try{
-    const res = await fetch('/api/verify',{
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ image:photoB64, mediaType:photoType, prompt })
-    });
-    const data = await res.json();
-    if(!res.ok) throw new Error(data.error||'Error del servidor');
-    const clean = (data.result||'').replace(/```json|```/g,'').trim();
-    const j = JSON.parse(clean);
-    const v = document.getElementById('verdict');
-    v.classList.remove('hidden','ok','bad');
-    if(j.aprobado){
-      v.classList.add('ok');
-      v.innerHTML = `✅ <b>¡Aprobado! ${j.correctas}/4 correctas.</b><br>${j.comentario||''}`;
-      document.getElementById('nextLevelBtn').classList.remove('hidden');
-      document.getElementById('verifyBtn').classList.add('hidden');
-      document.getElementById('photoBtns').classList.add('hidden');
-    } else {
-      v.classList.add('bad');
-      v.innerHTML = `❌ <b>Aún no: ${j.correctas||0}/4 correctas.</b><br>${j.comentario||''}<br>Corrige en tu hoja y sube otra foto.`;
-      // enseñar cómo se hace cada operación fallada, como en el colegio
-      const falladas = Array.isArray(j.falladas) ? j.falladas : [];
-      for(const L of falladas){
-        const letter=String(L).trim().toUpperCase();
-        const idx=letter.charCodeAt(0)-65;
-        if(paperOps[idx]) v.innerHTML += renderExplanation(paperOps[idx], letter);
-      }
-    }
-  }catch(err){
-    const v=document.getElementById('verdict');
-    v.classList.remove('hidden','ok'); v.classList.add('bad');
-    v.textContent='No pude verificar la foto (error de conexión o imagen ilegible). Intenta de nuevo con una foto más clara.';
-  }finally{
-    document.getElementById('spinner').classList.add('hidden');
-    document.getElementById('verifyBtn').disabled=false;
+document.getElementById('checkPaperBtn').onclick=()=>{
+  const v=document.getElementById('verdict');
+  let good=0; const wrong=[];
+  paperOps.forEach((o,i)=>{
+    const li=document.getElementById('pli'+i);
+    const val=parseInt(document.getElementById('pin'+i).value,10);
+    li.classList.remove('good','wrong');
+    if(val===o.ans){ good++; li.classList.add('good'); }
+    else { wrong.push(i); li.classList.add('wrong'); }
+  });
+  v.classList.remove('hidden','ok','bad');
+  if(good===paperOps.length){
+    SFX.correct();
+    v.classList.add('ok');
+    v.innerHTML=`✅ <b>¡Las ${paperOps.length} correctas! Eres una máquina. 🔥</b>`;
+    document.getElementById('nextLevelBtn').classList.remove('hidden');
+    document.getElementById('checkPaperBtn').classList.add('hidden');
+  } else {
+    SFX.wrong();
+    v.classList.add('bad');
+    v.innerHTML=`❌ <b>Llevas ${good}/${paperOps.length} correctas.</b><br>Mira cómo se hacen las que te faltan, corrígelas en tu hoja y vuelve a COMPROBAR:`;
+    for(const i of wrong) v.innerHTML += renderExplanation(paperOps[i], String.fromCharCode(65+i));
   }
-}
+};
 
 document.getElementById('nextLevelBtn').onclick=()=>{
   SFX.click();
