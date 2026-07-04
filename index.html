@@ -18,6 +18,8 @@
   .hud{position:absolute;top:0;left:0;right:0;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;pointer-events:none;z-index:5}
   .hud .lvl{font-family:'Bungee',cursive;font-size:clamp(14px,3vw,22px);text-shadow:0 0 12px var(--neon)}
   .hud .att{font-size:clamp(11px,2.4vw,15px);opacity:.85}
+  .muteBtn{pointer-events:auto;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.3);border-radius:8px;font-size:clamp(14px,3vw,18px);padding:4px 9px;cursor:pointer;color:#fff}
+  .muteBtn:active{transform:scale(.92)}
   .progressWrap{position:absolute;top:6px;left:50%;transform:translateX(-50%);width:min(46%,340px);height:10px;background:rgba(255,255,255,.15);border-radius:6px;overflow:hidden;z-index:5}
   .progressBar{height:100%;width:0%;background:linear-gradient(90deg,var(--neon),var(--neon2));transition:width .15s linear}
 
@@ -57,7 +59,10 @@
 
   <div class="hud">
     <div class="lvl" id="hudLevel">NIVEL 1</div>
-    <div class="att" id="hudAttempts">Intento 1</div>
+    <div style="display:flex;align-items:center;gap:12px">
+      <div class="att" id="hudAttempts">Intento 1</div>
+      <button class="muteBtn" id="muteBtn" title="Silenciar">🔊</button>
+    </div>
   </div>
   <div class="progressWrap"><div class="progressBar" id="progressBar"></div></div>
 
@@ -130,6 +135,78 @@
 </div>
 
 <script>
+// ================= SONIDO (Web Audio, sin archivos externos) =================
+let audioCtx=null, muted=false, musicTimer=null, musicStep=0;
+function initAudio(){
+  if(!audioCtx){
+    const AC = window.AudioContext||window.webkitAudioContext;
+    if(!AC) return;
+    audioCtx = new AC();
+  }
+  if(audioCtx.state==='suspended') audioCtx.resume();
+}
+function tone(freq, dur, type='square', vol=0.15, slideTo=null, delay=0){
+  if(!audioCtx||muted) return;
+  const t0=audioCtx.currentTime+delay;
+  const o=audioCtx.createOscillator(), g=audioCtx.createGain();
+  o.type=type; o.frequency.setValueAtTime(freq,t0);
+  if(slideTo) o.frequency.exponentialRampToValueAtTime(Math.max(slideTo,1), t0+dur);
+  g.gain.setValueAtTime(vol,t0); g.gain.exponentialRampToValueAtTime(0.001,t0+dur);
+  o.connect(g); g.connect(audioCtx.destination);
+  o.start(t0); o.stop(t0+dur+0.05);
+}
+function noise(dur=0.3, vol=0.25, delay=0){
+  if(!audioCtx||muted) return;
+  const t0=audioCtx.currentTime+delay;
+  const len=Math.max(1,Math.floor(audioCtx.sampleRate*dur));
+  const buf=audioCtx.createBuffer(1,len,audioCtx.sampleRate);
+  const d=buf.getChannelData(0);
+  for(let i=0;i<len;i++) d[i]=(Math.random()*2-1)*(1-i/len);
+  const s=audioCtx.createBufferSource(); s.buffer=buf;
+  const g=audioCtx.createGain(); g.gain.setValueAtTime(vol,t0);
+  g.gain.exponentialRampToValueAtTime(0.001,t0+dur);
+  s.connect(g); g.connect(audioCtx.destination); s.start(t0);
+}
+const SFX = {
+  jump(){ tone(280,0.14,'square',0.1,620); },
+  death(){ noise(0.5,0.3); tone(420,0.55,'sawtooth',0.18,55); },
+  portal(){ tone(220,0.4,'sine',0.16,880); tone(330,0.4,'sine',0.1,1320,0.05); },
+  correct(){ [523,659,784,1046].forEach((f,i)=>tone(f,0.16,'triangle',0.18,null,i*0.09)); },
+  wrong(){ tone(190,0.28,'sawtooth',0.2,110); },
+  win(){ [523,659,784,1046,784,1046,1318].forEach((f,i)=>tone(f,0.22,'triangle',0.18,null,i*0.13)); },
+  meteorWarn(){ tone(920,0.09,'square',0.09); tone(920,0.09,'square',0.09,null,0.16); },
+  meteorHit(){ noise(0.25,0.18); tone(140,0.3,'sine',0.22,45); },
+  land(){ tone(160,0.06,'triangle',0.06); },
+  click(){ tone(720,0.07,'square',0.07); },
+  tick(){ tone(1050,0.05,'square',0.06); }
+};
+// Música de fondo: bajo + arpegio, más rápida en niveles altos
+const MUSIC_SCALES=[
+  [130.81,164.81,196.00,246.94], // Nivel 1: Cm-ish
+  [146.83,174.61,220.00,277.18], // Nivel 2
+  [164.81,207.65,246.94,311.13]  // Nivel 3
+];
+function startMusic(){
+  stopMusic();
+  if(!audioCtx) return;
+  musicStep=0;
+  const stepMs=[200,180,160][level]||200;
+  musicTimer=setInterval(()=>{
+    if(muted||dead) return;
+    const notes=MUSIC_SCALES[level]||MUSIC_SCALES[0];
+    tone(notes[musicStep%4]/2, 0.18, 'triangle', 0.08);            // bajo
+    if(musicStep%2===0) tone(notes[(musicStep*3+1)%4]*2, 0.09, 'square', 0.025); // arpegio
+    if(musicStep%8===4) noise(0.07,0.045);                          // percusión
+    musicStep++;
+  }, stepMs);
+}
+function stopMusic(){ if(musicTimer){ clearInterval(musicTimer); musicTimer=null; } }
+document.getElementById('muteBtn').onclick=(e)=>{
+  e.stopPropagation();
+  muted=!muted;
+  document.getElementById('muteBtn').textContent = muted?'🔇':'🔊';
+};
+
 // ================= CONFIG DE NIVELES =================
 const LEVELS = [
   { name:'NIVEL 1', speed:5.2,  bg:['#0b1030','#16225e'], accent:'#00e5ff', cube:'#00e5ff',
@@ -223,7 +300,7 @@ function updateHud(){
 }
 
 // ================= INPUT =================
-function jump(){ if(running && !paused && !dead && player.onGround){ player.vy=JUMP; player.onGround=false; } }
+function jump(){ if(running && !paused && !dead && player.onGround){ player.vy=JUMP; player.onGround=false; SFX.jump(); } }
 addEventListener('keydown',e=>{ if(e.code==='Space'){ e.preventDefault(); jump(); }});
 cv.addEventListener('pointerdown',jump);
 
@@ -245,7 +322,7 @@ function update(dt){
   player.vy += GRAV*dt; player.y += player.vy*dt;
   const floorY = getFloorY();
   if(player.y >= floorY-player.size){ player.y=floorY-player.size; player.vy=0;
-    if(!player.onGround){ player.onGround=true; player.rot=Math.round(player.rot/90)*90; } }
+    if(!player.onGround){ player.onGround=true; player.rot=Math.round(player.rot/90)*90; SFX.land(); } }
   else { player.onGround=false; player.rot += 6.5*dt; }
   // estela
   if(Math.random()<0.5) particles.push({x:player.x-6,y:player.y+player.size-6+rnd(-4,4),life:1});
@@ -271,14 +348,14 @@ function update(dt){
   // meteoritos ☄️
   for(const m of meteors){
     const mx = m.x - camX;
-    if(m.state==='idle' && mx < innerWidth*0.85 && mx > 0){ m.state='warn'; m.warn=46; }
+    if(m.state==='idle' && mx < innerWidth*0.85 && mx > 0){ m.state='warn'; m.warn=46; SFX.meteorWarn(); }
     if(m.state==='warn'){ m.warn-=dt; if(m.warn<=0) m.state='fall'; }
     if(m.state==='fall'){
       m.vy += 0.55*dt; m.y += m.vy*dt;
       // colisión círculo-cubo
       const cx=Math.max(px,Math.min(mx,px+ps)), cy=Math.max(py,Math.min(m.y,py+ps));
       if((mx-cx)**2 + (m.y-cy)**2 < m.r*m.r) return die('☄️ ¡Un meteorito te aplastó!');
-      if(m.y >= groundY-6){ m.state='done';
+      if(m.y >= groundY-6){ m.state='done'; SFX.meteorHit();
         for(let i=0;i<10;i++) particles.push({x:mx+rnd(-14,14), y:groundY-8, life:1});
       }
     }
@@ -393,13 +470,15 @@ function draw(t){
 // ================= MUERTE / COMPLETADO =================
 function die(msg){
   dead=true; attempts++; totalAttempts++;
+  stopMusic(); SFX.death();
   for(let i=0;i<26;i++) deadFx.push({x:player.x+20,y:player.y+20,vx:rnd(-7,7),vy:rnd(-10,2),life:1});
   setTimeout(()=>{ document.getElementById('deathMsg').textContent=msg; show('deathScreen'); },550);
 }
-document.getElementById('retryBtn').onclick=()=>{ hide('deathScreen'); buildLevel(); };
+document.getElementById('retryBtn').onclick=()=>{ SFX.click(); hide('deathScreen'); buildLevel(); startMusic(); };
 
 function levelComplete(){
   paused=true;
+  stopMusic(); SFX.win();
   paperOps = LEVELS[level].genPaper();
   const list=document.getElementById('paperOps');
   list.innerHTML = paperOps.map((o,i)=>`<li>${String.fromCharCode(65+i)}) &nbsp;${o.a} × ${o.b} = ______</li>`).join('');
@@ -408,9 +487,10 @@ function levelComplete(){
 }
 
 // ================= PREGUNTAS EN PORTAL =================
-let currentQ=null, timerId=null, timerStart=0, timerDur=0, triesLeft=2;
+let currentQ=null, timerId=null, timerStart=0, timerDur=0, triesLeft=2, lastTickAt=0;
 function openQuestion(){
   paused=true; triesLeft=2;
+  SFX.portal();
   currentQ = LEVELS[level].genQ();
   document.getElementById('questionText').textContent = `${currentQ.a} × ${currentQ.b}`;
   document.getElementById('triesMsg').textContent = 'Tienes 2 intentos';
@@ -422,6 +502,7 @@ function openQuestion(){
   (function tick(){
     const left = 1-(performance.now()-timerStart)/timerDur;
     document.getElementById('timerFill').style.width=Math.max(left*100,0)+'%';
+    if(left<0.25 && left>0 && performance.now()-lastTickAt>600){ SFX.tick(); lastTickAt=performance.now(); }
     if(left<=0){ hide('questionScreen'); die(`¡Se acabó el tiempo! Era ${currentQ.a} × ${currentQ.b} = ${currentQ.ans}`); return; }
     if(!document.getElementById('questionScreen').classList.contains('hidden')) timerId=requestAnimationFrame(tick);
   })();
@@ -429,7 +510,8 @@ function openQuestion(){
 function submitAnswer(){
   const inp=document.getElementById('answerInput');
   const v = parseInt(inp.value,10);
-  if(v===currentQ.ans){ hide('questionScreen'); paused=false; return; }
+  if(v===currentQ.ans){ SFX.correct(); hide('questionScreen'); paused=false; return; }
+  SFX.wrong();
   triesLeft--;
   if(triesLeft>0){
     const m=document.getElementById('triesMsg');
@@ -516,19 +598,20 @@ async function verifyPhoto(){
 }
 
 document.getElementById('nextLevelBtn').onclick=()=>{
+  SFX.click();
   hide('paperScreen');
-  if(level < LEVELS.length-1){ level++; attempts=1; buildLevel(); }
+  if(level < LEVELS.length-1){ level++; attempts=1; buildLevel(); startMusic(); }
   else {
     document.getElementById('finalStats').textContent=`Total de intentos en toda la partida: ${totalAttempts+3}`;
-    show('winScreen');
+    show('winScreen'); SFX.win();
   }
 };
 
 // ================= FLUJO GENERAL =================
 function show(id){document.getElementById(id).classList.remove('hidden')}
 function hide(id){document.getElementById(id).classList.add('hidden')}
-document.getElementById('startBtn').onclick=()=>{ hide('startScreen'); running=true; last=performance.now(); buildLevel(); };
-document.getElementById('restartBtn').onclick=()=>{ hide('winScreen'); level=0; attempts=1; totalAttempts=0; buildLevel(); };
+document.getElementById('startBtn').onclick=()=>{ initAudio(); SFX.click(); hide('startScreen'); running=true; last=performance.now(); buildLevel(); startMusic(); };
+document.getElementById('restartBtn').onclick=()=>{ initAudio(); SFX.click(); hide('winScreen'); level=0; attempts=1; totalAttempts=0; buildLevel(); startMusic(); };
 </script>
 </body>
 </html>
